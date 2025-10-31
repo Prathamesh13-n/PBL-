@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maharashtra Sadak Suraksha - Pothole Reporting</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; overflow: hidden; }
+        #map { height: 100vh; width: 100vw; z-index: 10; }
+        .modal-backdrop { background-color: rgba(0,0,0,0.6); position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; align-items: center; justify-content: center; }
+        .leaflet-popup-content-wrapper { border-radius: 12px; }
+        .leaflet-popup-tip { border-radius: 0; }
+        .custom-popup .status-badge { padding: 4px 10px; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; color: white; text-transform: uppercase; }
+        .center-marker { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 20; pointer-events: none; }
+    </style>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src 'self' http://localhost:3000 https:; img-src 'self' data: blob: https:;" />
+</head>
+<body class="bg-gray-100">
+    <div id="map"></div>
+    <div class="absolute top-24 left-1/2 -translate-x-1/2 z-20 bg-white/90 backdrop-blur-md rounded-full shadow-lg px-3 py-2 flex items-center space-x-2 ring-1 ring-slate-200">
+        <input id="placeSearch2" type="text" placeholder="Search a place" class="w-64 px-3 py-1 rounded-full border border-gray-300 text-sm" />
+        <button id="placeSearchBtn2" class="px-3 py-1 bg-gradient-to-r from-sky-600 to-indigo-600 text-white rounded-full text-sm shadow hover:from-sky-700 hover:to-indigo-700">Search</button>
+    </div>
+
+    <div class="absolute top-0 left-0 right-0 p-4 z-20">
+        <header class="w-full max-w-5xl mx-auto bg-gradient-to-r from-slate-900 to-slate-800 text-white p-4 rounded-xl shadow-2xl flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <svg class="w-10 h-10 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 16.382V5.618a1 1 0 00-1.447-.894L15 7m-6 10V7m0 0L5.553 4.276A1 1 0 003 5.17v13.66a1 1 0 001.553.832L9 17m6-7l5.447-2.724A1 1 0 0021 6.382V5.618a1 1 0 00-1.447-.894L15 7m0 0l-6-3"></path></svg>
+                <h1 class="text-xl md:text-2xl font-bold tracking-wide">Maharashtra Sadak Suraksha</h1>
+            </div>
+            <div class="hidden md:flex items-center space-x-3 text-sm text-slate-200">
+                <span class="w-3 h-3 bg-red-500 rounded-full ring-2 ring-red-300/40"></span><span>New</span>
+                <span class="w-3 h-3 bg-yellow-400 rounded-full ring-2 ring-yellow-300/40"></span><span>In Progress</span>
+                <span class="w-3 h-3 bg-emerald-500 rounded-full ring-2 ring-emerald-300/40"></span><span>Repaired</span>
+            </div>
+        </header>
+        <div class="w-full max-w-5xl mx-auto mt-3 bg-white/90 backdrop-blur-md p-3 rounded-xl shadow-lg ring-1 ring-slate-200 flex flex-wrap items-center gap-2">
+            <input id="dirFrom" class="flex-1 min-w-48 px-3 py-2 rounded border border-gray-300" placeholder="From (place)" />
+            <button id="useMyLocation" class="px-3 py-2 bg-slate-900 text-white rounded shadow hover:bg-slate-800">My location</button>
+            <span class="text-gray-500">→</span>
+            <input id="dirTo" class="flex-1 min-w-48 px-3 py-2 rounded border border-gray-300" placeholder="To (place)" />
+            <button id="routeBtn" class="px-4 py-2 bg-gradient-to-r from-sky-600 to-indigo-600 text-white rounded shadow hover:from-sky-700 hover:to-indigo-700">Route</button>
+            <label class="inline-flex items-center gap-2 text-sm ml-2"><input id="liveToggle" type="checkbox" /> Live route</label>
+            <label class="inline-flex items-center gap-2 text-sm ml-2"><input id="followToggle" type="checkbox" /> Follow me</label>
+            <button id="openGmapsBtn" class="px-3 py-2 bg-emerald-600 text-white rounded shadow hover:bg-emerald-700">Google Maps</button>
+            <button id="openAppleBtn" class="px-3 py-2 bg-gray-700 text-white rounded shadow hover:bg-gray-800">Apple Maps</button>
+            <span id="routePotholeBadge" class="ml-auto px-3 py-2 rounded bg-red-600 text-white text-sm hidden">Potholes near route: 0</span>
+        </div>
+    </div>
+
+    <div id="report-button-container" class="absolute bottom-8 left-1/2 -translate-x-1/2 z-20">
+        <button id="report-btn" class="px-8 py-4 bg-blue-600 text-white font-bold text-lg rounded-full shadow-2xl hover:bg-blue-700 transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300">
+            REPORT A POTHOLE
+        </button>
+    </div>
+
+    <div id="report-modal" class="modal-backdrop hidden">
+        <div class="bg-white w-11/12 max-w-lg rounded-2xl shadow-xl p-6 md:p-8 transform transition-all scale-95 opacity-0" id="modal-content">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold text-gray-800">Report a New Pothole</h2>
+                <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <p class="text-gray-600 mb-6 text-center bg-blue-50 p-3 rounded-lg">Move the map to place the red marker at the exact pothole location.</p>
+
+            <form id="pothole-form">
+                <div class="space-y-6">
+                    
+                    <div>
+                        <label class="font-semibold text-gray-700 block mb-2">2. How big is the pothole?</label>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                           <label class="p-4 border border-gray-200 rounded-lg text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all"><input type="radio" name="size" value="Small" class="mr-2" required>Small</label>
+                           <label class="p-4 border border-gray-200 rounded-lg text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all"><input type="radio" name="size" value="Medium" class="mr-2">Medium</label>
+                           <label class="p-4 border border-gray-200 rounded-lg text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all"><input type="radio" name="size" value="Large" class="mr-2">Large</label>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="description" class="font-semibold text-gray-700 block mb-2">3. Add a Note (Optional)</label>
+                        <textarea id="description" name="description" rows="2" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., Near ABC School, filled with water..."></textarea>
+                    </div>
+                    <div class="pt-4">
+                        <button type="submit" class="w-full py-3 px-4 bg-blue-600 text-white font-bold text-lg rounded-full shadow-lg hover:bg-blue-700 transition focus:outline-none focus:ring-4 focus:ring-blue-300">Submit Report</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="center-marker" class="center-marker hidden">
+        <img src="https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png" style="width: 25px; height: 41px;">
+    </div>
+
+    <div id="toast" class="absolute top-24 left-1/2 -translate-x-1/2 bg-green-500 text-white text-center py-3 px-8 rounded-full shadow-lg transform transition-all opacity-0 -translate-y-10 z-30">
+        Report Submitted Successfully!
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const API_BASE = location.origin;
+    const MH_COORDS = [19.7515, 75.7139]; // Maharashtra center
+    const map = L.map('map').setView(MH_COORDS, 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const reportBtn = document.getElementById('report-btn');
+    const reportModal = document.getElementById('report-modal');
+    const modalContent = document.getElementById('modal-content');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+    const potholeForm = document.getElementById('pothole-form');
+    const centerMarker = document.getElementById('center-marker');
+    const toast = document.getElementById('toast');
+    
+    const placeSearch2 = document.getElementById('placeSearch2');
+    const placeSearchBtn2 = document.getElementById('placeSearchBtn2');
+    const dirFrom = document.getElementById('dirFrom');
+    const dirTo = document.getElementById('dirTo');
+    const routeBtn = document.getElementById('routeBtn');
+    const routePotholeBadge = document.getElementById('routePotholeBadge');
+    const useMyLocation = document.getElementById('useMyLocation');
+    const liveToggle = document.getElementById('liveToggle');
+    const followToggle = document.getElementById('followToggle');
+    const openGmapsBtn = document.getElementById('openGmapsBtn');
+    const openAppleBtn = document.getElementById('openAppleBtn');
+
+    let markersLayer = L.layerGroup().addTo(map);
+    let routeLayer = L.layerGroup().addTo(map);
+    let potholesCache = [];
+
+    const createIcon = (color) => new L.Icon({
+        iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+        iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+    });
+    const icons = { 'new': createIcon('red'), 'progress': createIcon('yellow'), 'repaired': createIcon('green') };
+
+    function popupFor(p) {
+        const statusText = p.status === 'new' ? 'Awaiting Approval' : p.status === 'progress' ? 'Repair in Progress' : 'Pothole Repaired';
+        const statusColor = p.status === 'new' ? 'bg-red-500' : p.status === 'progress' ? 'bg-yellow-500' : 'bg-green-500';
+        const img = p.photoUrl ? `<img src="${p.photoUrl}" class="mt-2 rounded-md max-h-40 object-cover" />` : '';
+        return `
+            <div class="custom-popup p-2">
+                <h3 class="font-bold text-lg mb-2">${p.size === 'Large' ? '⚠️' : ''} ${p.size} Pothole</h3>
+                <p class="text-gray-600 mb-2">${p.address || ''}</p>
+                <div class="flex items-center space-x-2">
+                    <span class="status-badge ${statusColor}">${statusText}</span>
+                </div>
+                <p class="text-xs text-gray-400 mt-3">Reported: ${p.reportedOn}</p>
+                ${img}
+            </div>`;
+    }
+
+    async function fetchPotholes() {
+        const res = await fetch(`${API_BASE}/api/potholes`);
+        if (!res.ok) throw new Error('Failed to load');
+        return await res.json();
+    }
+
+    function renderPotholes(list) {
+        potholesCache = list;
+        markersLayer.clearLayers();
+        list.forEach(p => {
+            const marker = L.marker([p.lat, p.lng], { icon: icons[p.status] });
+            marker.bindPopup(popupFor(p));
+            markersLayer.addLayer(marker);
+        });
+        if (!list || list.length === 0) {
+            showToast('No potholes reported yet');
+        }
+    }
+
+    async function loadAndRender() {
+        try {
+            const list = await fetchPotholes();
+            renderPotholes(list);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function openModal() {
+        reportModal.classList.remove('hidden');
+        centerMarker.classList.remove('hidden');
+        document.getElementById('report-button-container').classList.add('hidden');
+        setTimeout(() => {
+            modalContent.classList.remove('scale-95', 'opacity-0');
+            modalContent.classList.add('scale-100', 'opacity-100');
+        }, 10);
+    }
+    function closeModal() {
+        modalContent.classList.remove('scale-100', 'opacity-100');
+        modalContent.classList.add('scale-95', 'opacity-0');
+        setTimeout(() => {
+            reportModal.classList.add('hidden');
+            centerMarker.classList.add('hidden');
+            document.getElementById('report-button-container').classList.remove('hidden');
+        }, 200);
+        potholeForm.reset();
+        fileNameDisplay.textContent = '';
+    }
+    function showToast(message) {
+        toast.textContent = message;
+        toast.classList.remove('opacity-0', '-translate-y-10');
+        setTimeout(() => { toast.classList.add('opacity-0', '-translate-y-10'); }, 3000);
+    }
+
+    reportBtn.addEventListener('click', openModal);
+    closeModalBtn.addEventListener('click', closeModal);
+    reportModal.addEventListener('click', (e) => { if (e.target === reportModal) closeModal(); });
+    
+
+    const doSearch2 = async () => {
+        const q = (placeSearch2.value || '').trim();
+        if (!q) return;
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`);
+            const data = await res.json();
+            if (Array.isArray(data) && data[0]) {
+                const lat = parseFloat(data[0].lat);
+                const lon = parseFloat(data[0].lon);
+                map.setView([lat, lon], 16);
+            } else {
+                showToast('Place not found');
+            }
+        } catch {
+            showToast('Search failed');
+        }
+    };
+    placeSearchBtn2.addEventListener('click', doSearch2);
+    placeSearch2.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSearch2(); } });
+
+    function parseLatLngString(str) {
+        const m = String(str).trim().match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+        if (!m) return null;
+        const lat = parseFloat(m[1]);
+        const lon = parseFloat(m[2]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+        return { lat, lon };
+    }
+
+    async function geocode(query) {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
+        const data = await res.json();
+        if (Array.isArray(data) && data[0]) {
+            return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+        }
+        return null;
+    }
+
+    function projectMeters(lat, lon) {
+        return L.CRS.EPSG3857.project(L.latLng(lat, lon)); // returns {x,y} in meters
+    }
+
+    function pointToSegmentDistanceMeters(px, ax, bx) {
+        const apx = px.x - ax.x, apy = px.y - ax.y;
+        const abx = bx.x - ax.x, aby = bx.y - ax.y;
+        const ab2 = abx*abx + aby*aby;
+        const t = ab2 === 0 ? 0 : Math.max(0, Math.min(1, (apx*abx + apy*aby) / ab2));
+        const cx = ax.x + t*abx, cy = ax.y + t*aby;
+        const dx = px.x - cx, dy = px.y - cy;
+        return Math.sqrt(dx*dx + dy*dy);
+    }
+
+    function minDistanceToPolylineMeters(lat, lon, coords) {
+        // coords: [[lat, lon], ...] or [[lon, lat]]? OSRM returns [lon,lat]
+        const p = projectMeters(lat, lon);
+        let min = Infinity;
+        for (let i=0;i<coords.length-1;i++) {
+            const a = projectMeters(coords[i][1], coords[i][0]);
+            const b = projectMeters(coords[i+1][1], coords[i+1][0]);
+            const d = pointToSegmentDistanceMeters(p, a, b);
+            if (d < min) min = d;
+        }
+        return min;
+    }
+
+    async function routeBetween(fromQ, toQ) {
+        let f = fromQ;
+        let t = toQ;
+        if (typeof f === 'string') {
+            f = parseLatLngString(f) || await geocode(f);
+        }
+        if (typeof t === 'string') {
+            t = parseLatLngString(t) || await geocode(t);
+        }
+        if (!f || !t) throw new Error('Geocode failed');
+        const url = `https://router.project-osrm.org/route/v1/driving/${f.lon},${f.lat};${t.lon},${t.lat}?overview=full&geometries=geojson`;
+        const r = await fetch(url);
+        if (!r.ok) throw new Error('Route failed');
+        const json = await r.json();
+        const route = json.routes && json.routes[0];
+        if (!route) throw new Error('No route');
+        return { coords: route.geometry.coordinates, distance: route.distance, duration: route.duration };
+    }
+
+    function drawRouteAndCount(coords, meta) {
+        routeLayer.clearLayers();
+        const latlngs = coords.map(c => [c[1], c[0]]);
+        const poly = L.polyline(latlngs, { color: '#1f2937', weight: 5, opacity: 0.8 }).addTo(routeLayer);
+        map.fitBounds(poly.getBounds(), { padding: [40,40] });
+        const bufferM = 40;
+        let count = 0;
+        for (const p of potholesCache) {
+            const d = minDistanceToPolylineMeters(p.lat, p.lng, coords);
+            if (d <= bufferM) count++;
+        }
+        const km = (meta.distance/1000).toFixed(1);
+        const mins = Math.round(meta.duration/60);
+        if (count === 0) {
+            routePotholeBadge.textContent = `No potholes on route • ${km} km • ${mins} min`;
+            routePotholeBadge.classList.remove('bg-red-600');
+            routePotholeBadge.classList.add('bg-green-600');
+            showToast('No potholes on this route');
+        } else {
+            routePotholeBadge.textContent = `Potholes near route: ${count} • ${km} km • ${mins} min`;
+            routePotholeBadge.classList.remove('bg-green-600');
+            routePotholeBadge.classList.add('bg-red-600');
+        }
+        routePotholeBadge.classList.remove('hidden');
+        if (followToggle.checked) {
+            const start = latlngs[0];
+            map.setView(start, Math.max(map.getZoom(), 15));
+        }
+    }
+
+    const handleRoute = async () => {
+        const fq = (dirFrom.value || '').trim();
+        const tq = (dirTo.value || '').trim();
+        if (!fq || !tq) { showToast('Enter From and To'); return; }
+        try {
+            const result = await routeBetween(fq, tq);
+            drawRouteAndCount(result.coords, { distance: result.distance, duration: result.duration });
+        } catch (e) {
+            console.error(e);
+            showToast('Could not get directions');
+        }
+    };
+    useMyLocation.addEventListener('click', async () => {
+        if (!('geolocation' in navigator)) { showToast('Geolocation not supported'); return; }
+        navigator.geolocation.getCurrentPosition((pos) => {
+            const { latitude, longitude } = pos.coords;
+            dirFrom.value = `${latitude}, ${longitude}`;
+            map.setView([latitude, longitude], 15);
+        }, () => showToast('Could not read location'), { enableHighAccuracy: true, timeout: 8000 });
+    });
+
+    let liveWatchId = null;
+    function stopLive() {
+        if (liveWatchId != null) navigator.geolocation.clearWatch(liveWatchId);
+        liveWatchId = null;
+    }
+    async function handleLive(pos) {
+        const { latitude, longitude } = pos.coords;
+        const toQ = (dirTo.value || '').trim();
+        if (!toQ) return;
+        try {
+            const result = await routeBetween({ lat: latitude, lon: longitude }, toQ);
+            drawRouteAndCount(result.coords, { distance: result.distance, duration: result.duration });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+    liveToggle.addEventListener('change', () => {
+        if (liveToggle.checked) {
+            if (!('geolocation' in navigator)) { showToast('Geolocation not supported'); liveToggle.checked = false; return; }
+            liveWatchId = navigator.geolocation.watchPosition(handleLive, () => showToast('Location error'), { enableHighAccuracy: true, maximumAge: 2000, timeout: 8000 });
+        } else {
+            stopLive();
+        }
+    });
+
+    function openExternalMaps(provider) {
+        const fq = (dirFrom.value || '').trim();
+        const tq = (dirTo.value || '').trim();
+        if (!tq) { showToast('Enter destination'); return; }
+        const encFrom = encodeURIComponent(fq);
+        const encTo = encodeURIComponent(tq);
+        if (provider === 'gmaps') {
+            const url = `https://www.google.com/maps/dir/${encFrom}/${encTo}`;
+            window.open(url, '_blank');
+        } else if (provider === 'apple') {
+            const url = `https://maps.apple.com/?saddr=${encFrom}&daddr=${encTo}&dirflg=d`;
+            window.open(url, '_blank');
+        }
+    }
+    openGmapsBtn.addEventListener('click', () => openExternalMaps('gmaps'));
+    openAppleBtn.addEventListener('click', () => openExternalMaps('apple'));
+    routeBtn.addEventListener('click', handleRoute);
+    dirFrom.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); handleRoute(); } });
+    dirTo.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); handleRoute(); } });
+
+    potholeForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = new FormData();
+        const center = map.getCenter();
+        const size = (new FormData(potholeForm).get('size')) || 'Medium';
+        const description = (document.getElementById('description').value || '').toString();
+        form.append('lat', String(center.lat));
+        form.append('lng', String(center.lng));
+        form.append('size', String(size));
+        form.append('description', description);
+        
+        try {
+            const res = await fetch(`${API_BASE}/api/potholes`, { method: 'POST', body: form });
+            if (!res.ok) throw new Error('Submit failed');
+            await loadAndRender();
+            closeModal();
+            showToast('Report submitted successfully!');
+        } catch(err) {
+            console.error(err);
+            showToast('Failed to submit. Try again.');
+        }
+    });
+
+    loadAndRender();
+});
+</script>
+
+</body>
+</html>
+
+
